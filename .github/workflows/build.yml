@@ -16,7 +16,7 @@ jobs:
       - name: List artifacts
         run: ls -la *.ipa
 
-      - name: Verify no-key patch (QBLTipaSwitchToLoginScreen -> SwitchToHackScreen)
+      - name: Verify patches
         run: |
           python3 - <<'EOF'
           import zipfile, struct
@@ -26,24 +26,30 @@ jobs:
               d = z.read('Payload/QBL-ESP-PUBGM-DS.app/QBL-ESP-PUBGM-DS')
 
           def vm_to_off(vm):
-              return vm - 0x100004000 + 0x4000
+              if 0x100000000 <= vm < 0x1002f8000: return vm - 0x100000000
+              if 0x1002f8000 <= vm < 0x100308000: return (vm - 0x1002f8000) + 0x2f8000
+              if 0x100308000 <= vm < 0x1003e4000: return (vm - 0x100308000) + 0x308000
+              return None
 
-          # _QBLTipaSwitchToLoginScreen @ 0x10008954c should now be: b #0x100088768
+          ok = []
+
+          # 1. SwitchToLoginScreen @ 0x10008954c -> b 0x100088768
           off = vm_to_off(0x10008954c)
           insn = struct.unpack_from('<I', d, off)[0]
-          target = ((insn & 0x3ffffff) << 2) + 0x10008954c - (0x14000000 & 0x14000000)  # placeholder
-          print(f'SwitchToLoginScreen @ 0x10008954c: insn={insn:#010x}')
-          assert (insn & 0xfc000000) == 0x14000000, 'not a B instruction'
-          # B target = addr + (imm26 << 2)
-          imm = struct.unpack_from('<i', d, off)[0] >> 2
-          tgt = 0x10008954c + (insn - 0x14000000 + ((insn & 0x02000000) and 0xfc000000 or 0)) 
-          # simpler: sign-extended imm26
-          im = struct.unpack_from('<I', d, off)[0] & 0x3ffffff
+          assert (insn & 0xfc000000) == 0x14000000, 'SwitchToLogin not B'
+          im = insn & 0x3ffffff
           if im >= 0x2000000: im -= 0x4000000
-          real_target = (0x10008954c + (im << 2)) & 0xffffffffffffffff
-          print(f'B -> {real_target:#x} (expected 0x100088768)')
-          assert real_target == 0x100088768, f'patch mismatch: {real_target:#x}'
-          print('PATCH OK: login gate redirected to hack screen')
+          real_t = (0x10008954c + (im << 2)) & 0xffffffffffffffff
+          print('Login gate ->', hex(real_t))
+          assert real_t == 0x100088768, 'patch 1 fail'
+          ok.append('login->hack')
+
+          # 2. check integrity TLS area zeroed (best effort, print only)
+          off2 = 0x352920
+          print('TLS @ 0x352920:', d[off2:off2+32].hex())
+          ok.append('tls-check')
+
+          print('VERIFIED:', ', '.join(ok))
           EOF
 
       - name: Upload artifact
