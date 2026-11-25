@@ -1,0 +1,53 @@
+name: Build NAPO-ESP-PUBGM-DS-NOKING IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-ipa:
+    name: Build (verify + artifact)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: List artifacts
+        run: ls -la *.ipa
+
+      - name: Verify no-key patch (QBLTipaSwitchToLoginScreen -> SwitchToHackScreen)
+        run: |
+          python3 - <<'EOF'
+          import zipfile, struct
+
+          IPA = 'NAPO-ESP-PUBGM-DS-NOKING.ipa'
+          with zipfile.ZipFile(IPA) as z:
+              d = z.read('Payload/QBL-ESP-PUBGM-DS.app/QBL-ESP-PUBGM-DS')
+
+          def vm_to_off(vm):
+              return vm - 0x100004000 + 0x4000
+
+          # _QBLTipaSwitchToLoginScreen @ 0x10008954c should now be: b #0x100088768
+          off = vm_to_off(0x10008954c)
+          insn = struct.unpack_from('<I', d, off)[0]
+          target = ((insn & 0x3ffffff) << 2) + 0x10008954c - (0x14000000 & 0x14000000)  # placeholder
+          print(f'SwitchToLoginScreen @ 0x10008954c: insn={insn:#010x}')
+          assert (insn & 0xfc000000) == 0x14000000, 'not a B instruction'
+          # B target = addr + (imm26 << 2)
+          imm = struct.unpack_from('<i', d, off)[0] >> 2
+          tgt = 0x10008954c + (insn - 0x14000000 + ((insn & 0x02000000) and 0xfc000000 or 0)) 
+          # simpler: sign-extended imm26
+          im = struct.unpack_from('<I', d, off)[0] & 0x3ffffff
+          if im >= 0x2000000: im -= 0x4000000
+          real_target = (0x10008954c + (im << 2)) & 0xffffffffffffffff
+          print(f'B -> {real_target:#x} (expected 0x100088768)')
+          assert real_target == 0x100088768, f'patch mismatch: {real_target:#x}'
+          print('PATCH OK: login gate redirected to hack screen')
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NAPO-ESP-PUBGM-DS-NOKING
+          path: NAPO-ESP-PUBGM-DS-NOKING.ipa
