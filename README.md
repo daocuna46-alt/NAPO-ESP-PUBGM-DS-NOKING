@@ -2,9 +2,9 @@
 
 NAPO ESP Pubg DS (login bypass) — unsigned IPA.
 
-V6: login->hack redirect, guard/auth/release zeroed, __auth_ptr patched, main integrity call NOPed @ 0x10009bc0c.
+V7: reverted to login-bypass only (V1). Guard/auth/release intact.
 
 Build: https://github.com/daocuna46-alt/NAPO-ESP-PUBGM-DS-NOKING/actions/workflows/build.yml
 
 ## Status
-Best effort — runtime integrity still unresolved. Needs lldb runtime check on device.
+Login bypass only. Runtime integrity unresolved.
